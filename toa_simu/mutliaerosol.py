@@ -20,7 +20,7 @@ import toa_simu.auxdata as ad
 from Py6S import *
 
 publish = False
-sza = 30
+sza = 40
 vza = 10
 azi = 10
 wind = 2
@@ -70,36 +70,59 @@ Es_toa = F0 * np.cos(np.radians(sza))
 
 models = ['rg0.10_sig0.46_nr1.51_ni-0.0200', 'rg0.10_sig0.46_nr1.45_ni-0.0001',
           'rg0.80_sig0.60_nr1.51_ni-0.0200', 'rg0.80_sig0.60_nr1.35_ni-0.0010']
-ichoice = 2
+ichoice = 1
 tiltes = ['TOA radiance', 'TOA normalized radiance', 'TOA normalized radiance corrected for gaseous absorption']
 params = ['L_TOA', 'L_NTOA', 'L_NTOA_gascorr']
 norms = [trans_gas * Es_toa, trans_gas, 1]
 
 norm = norms[ichoice]
-df_ = pd.DataFrame()
 
-for model in models:
 
+# -------------------------------
+#  LUT loading
+# -------------------------------
+lut, aerosol = [], []
+for imod, model in enumerate(models):
     lutfile = os.path.join(dirlut, 'lut_toa_rad_aero_' + model + '.nc')
 
-    lut = xr.open_dataarray(lutfile, group='Lnorm')
-    aerosol = xr.open_dataset(lutfile, group='aerosol')
-    aot = lut.aot * aerosol.Cext / aerosol.Cext_ref
+    lut.append(xr.open_dataarray(lutfile, group='Lnorm'))
+    aerosol.append(xr.open_dataset(lutfile, group='aerosol'))
 
-    Ln_toa_ = lut.isel(z=1).interp(sza=sza, vza=vza, azi=azi)
-    Ln_toa = Ln_toa_.interp(wl=wl / 1000, method='quadratic')  # 'cubic')
-    # Ln_toa = Ln_toa_.interp( wl=wl / 1000, method='nearest')
-    aot_ = aot.interp(wl=wl / 1000, method='quadratic')
+# -------------------------------
+#  mixing aerosols
+# -------------------------------
+beta = np.array([0.2, 0.3, 0.4, 0.1])
+beta = beta / sum(beta)
+Ln_toa, aot_ = 0., 0.
+fig, axs = plt.subplots(2,2)
+axs_=axs.ravel()
+for imod, model in enumerate(models):
 
-    for aot550 in [0.01, 0.1, 0.2, 0.3, 0.5, 0.8]:
-        trans_atmo = np.exp(
-            -(rot + aot_.interp(aot=aot550)) * (1 / np.cos(np.radians(sza)) + 1 / np.cos(np.radians(vza))))
-        Ltoa = norm * Ln_toa.interp(aot=aot550)
-        Ltoa_g = Ltoa + norm * trans_atmo * r_g
-        df = pd.DataFrame({'wl': wl, 'Ltoa': Ltoa, 'Ltoa_g': Ltoa_g})
-        df['aot550'] = aot550
-        df['model'] = model
-        df_ = pd.concat([df_, df])
+    Ln_toa_ = lut[imod].isel(z=1).interp(sza=sza, vza=vza, azi=azi)
+    Ln_toa = Ln_toa + beta[imod] * Ln_toa_.interp(wl=wl / 1000, method='quadratic')  # 'cubic')
+
+    aot = lut[imod].aot * aerosol[imod].Cext / aerosol[imod].Cext_ref
+    aot_ = aot_ + beta[imod] * aot.interp(wl=wl / 1000, method='quadratic')
+
+
+    aij =np.polyfit(Ln_toa_.aot,Ln_toa_.values,4)
+    aij3 =np.polyfit(Ln_toa_.aot,Ln_toa_.values,3)
+
+    xaot=np.linspace(0,1,100)
+    axs_[imod].plot(xaot,[np.polyval(aij ,[xi]) for xi in xaot])
+    axs_[imod].plot(xaot,[np.polyval(aij3 ,[xi]) for xi in xaot],color='grey')
+    axs_[imod].plot(Ln_toa_.aot,Ln_toa_.values,'.')
+
+df_ = pd.DataFrame()
+for aot550 in [0.01, 0.1, 0.2, 0.3, 0.5, 0.8, 1.0]:
+    trans_atmo = np.exp(
+        -(rot + aot_.interp(aot=aot550)) * (1 / np.cos(np.radians(sza)) + 1 / np.cos(np.radians(vza))))
+    Ltoa = norm * Ln_toa.interp(aot=aot550)
+    Ltoa_g = Ltoa + norm * trans_atmo * r_g
+    df = pd.DataFrame({'wl': wl, 'Ltoa': Ltoa, 'Ltoa_g': Ltoa_g})
+    df['aot550'] = aot550
+    df['model'] = model
+    df_ = pd.concat([df_, df])
 
 ####################################
 #  Plot spectra
@@ -114,7 +137,7 @@ fig = px.scatter(df__, x="wl", y="value", color="variable", facet_col='model', f
                  animation_frame=by_,
                  title=tiltes[ichoice] + " with and without sunglint, sza= {:.1f}°, vza= {:.1f}° ".format(sza, vza),
                  height=950)  # ,width=1200)
-po.plot(fig, filename=params[ichoice] + '_test.html')
+po.plot(fig)  # , filename=params[ichoice] + '_test.html')
 if publish:
     py.plot(fig, filename=params[ichoice] + '_test.html', auto_open=False)
 

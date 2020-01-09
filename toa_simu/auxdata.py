@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
+from pkg_resources import resource_filename
 
 class rot:
     '''
@@ -15,7 +15,7 @@ class rot:
     '''
 
     def __init__(self):
-        file = 'auxdata/rayleigh_bodhaine.txt'
+        file = resource_filename(__package__,'data/rayleigh_bodhaine.txt')
         data = pd.read_csv(file, skiprows=16, sep=' ', header=None)
         data.columns = ('wl', 'rot', 'dpol')
         self.arr = data.set_index('wl').to_xarray()
@@ -47,8 +47,8 @@ class water_refractive_index:
     '''
 
     def __init__(self):
-        self.n_mc09 = pd.read_csv("auxdata/Max_Chapados_2009_data.txt", sep=' ').set_index('wl_micron').to_xarray()
-        self.n_hq73 = pd.read_csv("auxdata/RefractiveIndex_hale_querry_1973.csv", sep='\s+').set_index(
+        self.n_mc09 = pd.read_csv(resource_filename(__package__,"data/Max_Chapados_2009_data.txt"), sep=' ').set_index('wl_micron').to_xarray()
+        self.n_hq73 = pd.read_csv(resource_filename(__package__,"data/RefractiveIndex_hale_querry_1973.csv"), sep='\s+').set_index(
             'wl_micron').to_xarray()
 
     def n_K2012(self, wl):
